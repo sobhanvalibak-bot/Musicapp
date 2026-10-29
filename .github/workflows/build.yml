@@ -12,13 +12,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find project folder
+      - name: Extract zip fresh (or use project files if no zip)
         id: proj
         run: |
-          f=$(find . -name settings.gradle -not -path "*/node_modules/*" | head -n 1)
-          if [ -z "$f" ]; then
-            echo "settings.gradle not found. Repo contents:"; ls -R | head -50; exit 1
+          rm -rf _src
+          zip_file=""
+          for z in $(find . -maxdepth 2 -name "*.zip" -not -path "./.git/*"); do
+            if unzip -l "$z" | grep -q "settings.gradle"; then zip_file="$z"; break; fi
+          done
+          if [ -n "$zip_file" ]; then
+            echo "Extracting $zip_file"
+            mkdir _src
+            unzip -q "$zip_file" -d _src
+            f=$(find _src -name settings.gradle | head -n 1)
+          else
+            echo "No project zip found, using project files in repo"
+            f=$(find . -name settings.gradle -not -path "./.git/*" | head -n 1)
           fi
+          if [ -z "$f" ]; then echo "settings.gradle not found"; ls -R | head -50; exit 1; fi
           dir=$(dirname "$f")
           echo "Project dir: $dir"
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
@@ -62,3 +73,7 @@ jobs:
           name: SongApp-debug-apk
           path: ${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Delete extracted files
+        if: always()
+        run: rm -rf _src
