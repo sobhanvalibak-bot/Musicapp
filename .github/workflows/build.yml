@@ -12,6 +12,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Find project folder
+        id: proj
+        run: |
+          f=$(find . -name settings.gradle -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$f" ]; then
+            echo "settings.gradle not found. Repo contents:"; ls -R | head -50; exit 1
+          fi
+          dir=$(dirname "$f")
+          echo "Project dir: $dir"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Use fixed signing key (so new builds update the old install)
+        run: |
+          ks=$(find . -name debug.keystore -not -path "./.git/*" | head -n 1)
+          if [ -z "$ks" ]; then
+            echo "debug.keystore not found. Put it in the repo root (next to .github)."; exit 1
+          fi
+          mkdir -p ~/.android
+          cp "$ks" ~/.android/debug.keystore
+
+      - name: Bump versionCode on every build
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${GITHUB_RUN_NUMBER}/" app/build.gradle
+          grep -n "versionCode" app/build.gradle
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -27,11 +53,12 @@ jobs:
           gradle-version: 8.7
 
       - name: Build debug APK
+        working-directory: ${{ steps.proj.outputs.dir }}
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SongApp-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
